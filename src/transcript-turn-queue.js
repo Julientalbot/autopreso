@@ -7,8 +7,8 @@ export function createTranscriptTurnQueue({ runTurn, debounceMs = 150, maxWaitMs
   // Pending bucket holds chunks that arrived too recently to fire yet. Waiting
   // a short window lets bursts of small transcript chunks coalesce into one
   // turn. The isReady predicate gates whether the accumulated buffer has
-  // enough substantive content to actually fire - if not, we keep accumulating
-  // until the next chunk arrives.
+  // enough substantive content to actually fire - if not, keep accumulating
+  // until more chunks arrive or max wait / idle() forces a flush.
   let pending = [];
   let debounceTimer = null;
   let maxWaitTimer = null;
@@ -34,8 +34,8 @@ export function createTranscriptTurnQueue({ runTurn, debounceMs = 150, maxWaitMs
     if (pending.length === 0) return;
     const text = pending.join("\n");
     if (!force && !isReady(text)) {
-      // Not enough content yet - keep pending, wait for more chunks. The next
-      // enqueue will restart the debounce timer and we'll re-check then.
+      // Not enough content yet - the next enqueue restarts debounce, while
+      // an enabled max-wait timer can still force this batch through.
       return;
     }
     pending = [];
@@ -59,7 +59,7 @@ export function createTranscriptTurnQueue({ runTurn, debounceMs = 150, maxWaitMs
       } else {
         running = false;
         // If pending arrived during the turn and is now ready, flush it. If
-        // it's still not ready (only fillers), leave it accumulating.
+        // it's still not ready, keep accumulating until more text or max wait.
         if (pending.length > 0) {
           if (debounceTimer) clearTimeout(debounceTimer);
           flushPending();
@@ -97,6 +97,7 @@ export function createTranscriptTurnQueue({ runTurn, debounceMs = 150, maxWaitMs
     }
   }
 
+  // Drop queued text and timers; an already-running turn is not cancelled.
   function clear() {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = null;
@@ -105,6 +106,7 @@ export function createTranscriptTurnQueue({ runTurn, debounceMs = 150, maxWaitMs
     buffered = [];
   }
 
+  // Apply timing changes immediately, restarting timers for pending text.
   function configure(next = {}) {
     if (next.debounceMs !== undefined) currentDebounceMs = next.debounceMs;
     if (next.maxWaitMs !== undefined) currentMaxWaitMs = next.maxWaitMs;

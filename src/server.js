@@ -59,6 +59,8 @@ export async function startServer(options) {
     state,
   });
 
+  // Let final STT results arrive, then drain queued turns before invalidating
+  // this token. A reset or new preso may already have replaced it.
   async function finishStoppedSession(sessionToEnd) {
     const drainMs = Number.isFinite(options.stopDrainMs) ? Math.max(0, options.stopDrainMs) : DEFAULT_STOP_DRAIN_MS;
     if (drainMs > 0) {
@@ -80,9 +82,8 @@ export async function startServer(options) {
     });
   }
 
-  // Warm the xAI catalog in the background so pricing and reasoning-effort
-  // clamping use live data from the first turn. Only when xAI is the agent,
-  // so tests and other providers never touch the network.
+  // Refresh in the background only when the saved agent provider is xAI.
+  // Turns can use the fallback until this finishes; tests can inject fetchFn.
   if (options.settingsStore && (await options.settingsStore.load())?.agent?.provider === "xai") {
     void refreshXaiModels();
   }
@@ -245,9 +246,8 @@ export async function startServer(options) {
       }
 
       if (message.type === "whiteboard:user-elements" && Array.isArray(message.elements)) {
-        // The user can draw on the live canvas before clicking Start listening
-        // (and during it). Frontend pushes the current scene here so the next
-        // transcript turn has fresh elements available to the agent.
+        // The frontend syncs user edits while live listening is stopped, so
+        // the next transcript turn has the current scene available.
         if (state.mode === "live") {
           state.elements = message.elements;
         }
@@ -406,12 +406,12 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
 }
 
 export async function runWhiteboardAgent({ transcript, state, wss, options, generateTextFn = generateText, streamTextFn = streamText }) {
-  // Capture the session at turn start. If the user clicks Stop / Back to
-  // staging / Reset / Start preso while we're in flight, mySession.active
-  // flips to false. Tool execute and the post-turn agentHistory update both
-  // check this and become no-ops, so late LLM responses can't mutate the
-  // canvas or contaminate the next session's history. Cost recording does
-  // NOT consult this - we paid for the tokens regardless.
+  // Capture the session at turn start. Back to staging / Reset / Start preso
+  // invalidate it immediately; Stop first lets final transcripts and turns
+  // drain. Tool execute and the post-turn agentHistory update both check
+  // mySession.active and skip mutation after invalidation, protecting the
+  // next session's canvas and history. Cost recording does NOT consult this -
+  // we paid for the tokens regardless.
   // (Tests/scaffolds without a session token are treated as always-active.)
   const mySession = state.session ?? { active: true };
   // Only attach the live screenshot when the canvas has been edited since the
@@ -449,8 +449,8 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
     ?? (options.settingsStore
       ? resolveAgentProviderFromSettings({ settings: await options.settingsStore.load(), env: options.env ?? process.env })
       : defaultWhiteboardAgentProvider(options));
-  // Fold the primer text into the system prompt for both openai and codex
-  // providers. The primer image (if any) stays in messages[0] - system prompts
+  // Fold the primer text into the system prompt for every agent provider.
+  // The primer image (if any) stays in messages[0] - system prompts
   // are text-only across these APIs. This keeps the staging context as a
   // first-class system instruction rather than a stale early user message.
   const primerText = extractPrimerText(state.agentHistory?.[0]);
@@ -589,9 +589,9 @@ export async function runWhiteboardAgent({ transcript, state, wss, options, gene
   return result;
 }
 
-// Returned to the model when a tool is called after the user has ended the
-// session (clicked Stop, etc). The model sees this as the tool result, which
-// usually causes it to stop without further tool calls. State is unchanged
+// Returned to the model when a tool is called after its session token was
+// invalidated (for example, by Reset). The model sees this as the tool result,
+// which usually causes it to stop without further tool calls. State is unchanged
 // either way - what matters is that we did not mutate state.elements or
 // broadcast a whiteboard:update for the late edit.
 const STALE_SESSION_TOOL_RESULT = "Session has ended; the requested edit was not applied.";
@@ -809,7 +809,7 @@ export function dumpAgentRequest(label, args) {
       systemLength: typeof system === "string" ? system.length : 0,
       instructionsFingerprint: fingerprint(instructions ?? null),
       instructionsLength: typeof instructions === "string" ? instructions.length : 0,
-      // Primer text now lives in the system prompt for both providers, plus
+      // Primer text now lives in the system prompt for all providers, plus
       // codex's `instructions` field which mirrors system. Dumping it directly
       // lets you verify the user's staging content reached the agent without
       // having to parse the (huge) full system prompt.

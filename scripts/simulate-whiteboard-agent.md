@@ -57,7 +57,7 @@ The simulator script is:
 ./scripts/simulate-whiteboard-agent.js
 ```
 
-It runs the whiteboard agent. Auth and everything has already been set up so you can just run it.
+The CLI harness runs the whiteboard agent through Codex CLI auth via `src/simulator-agent-provider.js`; it does not load the app's saved provider or xAI settings. It uses `CODEX_MODEL`, then `OPENAI_MODEL`, then `gpt-5.5`, stripping a `-fast` suffix. A signed-in Codex CLI is required. For xAI provider and live STT verification, use the browser test described in [CONTRIBUTING.md](../CONTRIBUTING.md#xai-checks).
 
 Baseline run:
 
@@ -130,6 +130,8 @@ Specific structural pathologies to check for (these are the failure modes the ex
 ## Prompt guidelines
 
 The whiteboard system prompt is structured as: cross-cutting structural principles (P1-P10, as of this writing) plus short per-genre stubs that reference the principles by number. When making changes, fit your fix into this structure rather than appending another verbose "When the talk is X..." paragraph - that pattern caused 50,000+ characters of bloat that we already consolidated once.
+
+The per-turn canvas task in `formatCurrentCanvasTask` also requires the first visual for substantive speech on an empty board. For xAI only, `runWhiteboardAgent` forces `whiteboard_apply` on the first model step when the board is empty and the transcript is nontrivial. This tool choice is outside the system prompt and is not exercised by the CLI harness's Codex provider; account for it when comparing xAI behavior with simulator output.
 
 Fix-flowchart for an observed failure:
 

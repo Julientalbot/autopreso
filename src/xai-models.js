@@ -1,8 +1,9 @@
 // xAI model catalog: which models exist, what they cost, and which
 // reasoning_effort values they accept. The live list comes from
 // GET {baseURL}/language-models (see refreshXaiModelCatalog); the built-in
-// list below is used until that call succeeds, or when it fails.
-// Prices are USD per 1M tokens for prompts under 200k tokens.
+// list below is used until a refresh succeeds. Failed refreshes retain the
+// current in-memory catalog, including a previously fetched API list.
+// Prices are base USD per 1M tokens; context-length tiers are not modeled.
 
 export const XAI_FALLBACK_MODELS = Object.freeze([
   {
@@ -66,8 +67,9 @@ export function resetXaiModelCatalog() {
 }
 
 // Returns the effort to send, or undefined to omit reasoning_effort.
-// Unknown models get undefined: sending an unsupported value is an HTTP 400,
-// omitting it only costs latency.
+// Search upward from the requested effort, then use the first advertised
+// effort if no higher level is supported. Unknown models or missing/empty
+// capabilities omit the parameter and leave the provider's default in effect.
 export function resolveXaiReasoningEffort(modelId, requested) {
   const supported = findXaiModel(modelId)?.reasoningEfforts ?? [];
   if (supported.length === 0) return undefined;
@@ -76,6 +78,8 @@ export function resolveXaiReasoningEffort(modelId, requested) {
 }
 
 /**
+ * Refresh the process-wide catalog, retaining the current list on failure or
+ * when no key is supplied. A successful non-empty response replaces the list.
  * @param {{ apiKey?: string, baseURL?: string, fetchFn?: (url: string, init: any) => Promise<any>, timeoutMs?: number, log?: { warn: (message: string) => void } }} [options]
  */
 export async function refreshXaiModelCatalog({

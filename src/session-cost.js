@@ -1,8 +1,9 @@
 // Session cost tracking. OpenAI rates are the June 2026 list prices in
 // AGENT_PRICING / TRANSCRIPTION_PRICING - update them in one place if OpenAI
 // changes its rate card. xAI agent rates come from src/xai-models.js (live
-// /v1/language-models, built-in fallback). Local providers (moonshine,
-// ollama) are billed at $0; codex routes through the user's ChatGPT
+// /v1/language-models, built-in fallback); xAI STT uses the fixed estimate in
+// TRANSCRIPTION_PRICING. Local providers (moonshine, ollama) are billed at $0;
+// codex routes through the user's ChatGPT
 // subscription so it isn't billed per-token here either.
 
 import { findXaiModel } from "./xai-models.js";

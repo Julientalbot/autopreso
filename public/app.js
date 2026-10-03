@@ -206,11 +206,9 @@ function App() {
     // Only push user edits to the server while in live mode. In staging the
     // canvas is a client-side scratchpad; the server doesn't need to know.
     if (modeRef.current !== "live") return;
-    // Once listening starts, the agent owns the canvas. Echoing user-elements
-    // back creates an ID-rotation feedback loop: applyScene re-runs
-    // convertToExcalidrawElements, which assigns fresh IDs, which propagate
-    // back via onChange, which break the agent's cache prefix and confuse
-    // line-numbered references. Sync only during the pre-listen window.
+    // While listening, the agent owns the canvas. Sync user edits only while
+    // stopped, and read the current scene when the debounce fires so stale
+    // onChange snapshots cannot overwrite newer server updates.
     if (listeningRef.current) return;
     if (pendingSceneRef.current) return;
     if (!apiRef.current) return;

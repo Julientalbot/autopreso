@@ -37,7 +37,7 @@ autopreso listening at http://127.0.0.1:3210
 # In the browser:
 # 1. Drop reference materials onto the staging canvas (title, agenda, etc).
 # 2. Pick your microphone, transcription model, agent model, and optional Agent instructions.
-# 3. Click "Start Preso" and start talking.
+# 3. Click "Start Preso", then "Start Talking" when warmup finishes.
 ```
 
 ## Install
@@ -83,9 +83,10 @@ npm start
 ```
 
 - **Two modes** - "staging" lets you sketch seed content client-side; "live" hands the canvas over to the agent, biases OpenAI Realtime or xAI Streaming transcription toward staging text and labels, and starts streaming transcripts.
-- **Local server, local network only** - the Express + WebSocket server binds to 127.0.0.1; nothing is exposed beyond your machine.
+- **Local server** - the Express + WebSocket server binds to 127.0.0.1; the browser endpoint is only reachable on your machine.
 - **Persistent settings** - models, API keys, STT engine choices, and Agent instructions live in `~/.config/autopreso/settings.json` and survive restarts.
 - **Warmup loop** - after you hit start the agent primes itself against your staging content and Agent instructions so the first sentence you say doesn't get a cold model.
+- **Stop listening** - Stop ends microphone capture, then the server allows 3.5 seconds for final transcripts and waits for queued agent turns to finish. The canvas can still update during this drain; returning to staging or resetting cancels the old session's pending edits.
 
 ## CLI Reference
 
@@ -105,9 +106,30 @@ npm start
 
 Settings persist at `~/.config/autopreso/settings.json` and are managed from the in-app status panel.
 Agent instructions are saved automatically from staging, can be up to 100,000 characters, and take effect on the next Start Preso.
-The Latency row in the status panel controls xAI STT end-of-turn timeout plus transcript-to-agent debounce and max-wait timing.
-The live Session cost card estimates agent token costs and cloud transcription audio costs for the current presentation, resetting on Start Preso or session reset.
-OpenAI prices use the built-in June 2026 rate table. xAI prices and the xAI model list come from xAI's `/v1/language-models` endpoint, with a built-in fallback when it is unreachable. Local providers show `$0.0000`, Codex shows token volume because it routes through your subscription, and unknown models show `n/a`.
+The live Session cost card estimates agent token costs across all tool-call steps and warmup attempts, plus cloud transcription audio costs for the current presentation, resetting on Start Preso or session reset.
+OpenAI prices use the built-in June 2026 rate table. xAI agent prices use the model catalog described below; xAI Streaming STT uses a separate built-in estimate of $0.20 per hour of audio sent. Local providers show `$0.0000`, Codex shows token volume because it routes through your subscription, and unknown models show `n/a`.
+
+### xAI agent and transcription
+
+For a new installation, set `XAI_API_KEY` before launching `npx autopreso`. For an existing installation, select **xAI** in the Agent row and/or **xAI Streaming** in the STT engine row, then enter the key and save. Both use the same saved `apiKeys.xai` key, but the two providers are selected independently. The agent defaults to `grok-4.3`; STT defaults to language `en`, which you can change in its Language selector (for example, `fr`). The agent Base URL defaults to `https://api.x.ai/v1` and also controls model discovery; STT always connects to `wss://api.x.ai/v1/stt`.
+
+The xAI model list, agent prices, and supported reasoning levels come from `{agent.xai.baseURL}/language-models`. The server refreshes the catalog in the background at startup when xAI is the saved agent provider, and when the xAI Agent editor opens. Reopen that editor after saving a new key or Base URL to refresh the list.
+
+Until a refresh succeeds, it uses a built-in catalog of `grok-4.3`, `grok-4.7`, and `grok-build-0.1` (including aliases such as `grok-code-fast-1`). A failed refresh keeps the last successful in-memory catalog, or the built-in catalog if none has succeeded. Newly discovered models appear without a code change, and the saved model remains selectable even if absent from the catalog. Cost estimates use the catalog's base token rates without modeling context-length pricing tiers.
+
+`agent.xai.reasoningEffort` defaults to `none` for low latency. The Reasoning selector offers the selected model's advertised levels and hides when none are advertised. Before sending a request, the server adjusts an unsupported choice using the catalog; with the built-in catalog, `grok-4.7` maps `none` to `low`, while `grok-build-0.1` and unknown models omit `reasoning_effort` entirely.
+
+### Latency
+
+The Latency row saves these settings and applies them without restarting the server:
+
+| Control | Settings field | Default | Range | Effect |
+| ------- | -------------- | ------- | ----- | ------ |
+| STT timeout (ms) | `transcription.xai.smartTurnTimeoutMs` | `1200` | `300`–`5000` | xAI's end-of-turn timeout; only shown for xAI STT. Saving a changed value reconnects STT. |
+| Debounce (ms) | `latency.transcriptTurnDebounceMs` | `250` | `0`–`5000` | Coalesces bursts of committed transcript chunks for every STT provider. `0` removes the debounce delay. |
+| Max wait (ms) | `latency.transcriptTurnMaxWaitMs` | `1200` | `100`–`10000` | Flushes an accumulated transcript even when it is too short to pass the readiness check. |
+
+Values are rounded to whole milliseconds and clamped to these ranges when applied. Short, unfinished fragments may wait for more content even with debounce set to `0`; filler-only turns are skipped. Max wait bounds transcript batching, not STT processing or model response time: only one agent turn runs at a time, so a busy agent can add more delay.
 
 ### Defaults on first run
 
@@ -126,7 +148,7 @@ Auto-detection precedence: **Codex CLI auth wins over `OLLAMA_MODEL` wins over `
 
 ### Environment variables
 
-Provider variables only seed `settings.json` on first run. Once the file exists, they're ignored - edit the file or use the in-app panel. Log path variables are read on each process start.
+Provider and latency variables seed `settings.json` on first run. Once the file exists, saved settings win; use the in-app panel, or edit the file and restart. `OPENAI_API_KEY` and `XAI_API_KEY` also serve as runtime fallbacks when the corresponding saved key is empty, without changing the selected providers. `PORT`, `CODEX_HOME`, and log path variables are read on each process start.
 
 | Variable               | Purpose                                               |
 | ---------------------- | ----------------------------------------------------- |
@@ -134,20 +156,24 @@ Provider variables only seed `settings.json` on first run. Once the file exists,
 | `OPENAI_API_KEY`       | Seeds the OpenAI key for both agent and Realtime STT. |
 | `OPENAI_MODEL`         | Seeds the OpenAI agent model.                         |
 | `OPENAI_BASE_URL`      | Seeds the OpenAI agent API base URL.                  |
+| `OPENAI_REASONING_EFFORT` | Seeds the OpenAI reasoning effort (also used by Codex): `none`, `low`, `medium`, `high`, or `xhigh`. Default: `low`. |
 | `XAI_API_KEY`          | Seeds the xAI key for both agent and Streaming STT.   |
 | `XAI_MODEL`            | Seeds the xAI agent model.                            |
-| `XAI_BASE_URL`         | Seeds the xAI agent API base URL.                     |
-| `XAI_REASONING_EFFORT` | Seeds the xAI agent reasoning effort. Default: `none` (lowest latency); models that reject it get the nearest supported level. |
+| `XAI_BASE_URL`         | Seeds the xAI agent and model catalog API base URL. Default: `https://api.x.ai/v1`; does not change the STT endpoint. |
+| `XAI_REASONING_EFFORT` | Seeds the xAI agent reasoning effort: `none`, `low`, `medium`, `high`, or `xhigh`. Default: `none`; adjusted or omitted using the model catalog before sending. |
 | `XAI_STT_LANGUAGE`     | Seeds the xAI STT language code. Default: `en`.       |
 | `XAI_STT_SMART_TURN_TIMEOUT_MS` | Seeds xAI STT end-of-turn timeout. Default: `1200`. |
 | `AUTOPRESO_TRANSCRIPT_TURN_DEBOUNCE_MS` | Seeds transcript-to-agent debounce. Default: `250`. |
 | `AUTOPRESO_TRANSCRIPT_TURN_MAX_WAIT_MS` | Seeds transcript-to-agent max wait. Default: `1200`. |
 | `CODEX_MODEL`          | Seeds the Codex model.                                |
+| `CODEX_BASE_URL`       | Seeds the Codex backend URL. Default: `https://chatgpt.com/backend-api/codex`. |
+| `CODEX_HOME`           | Codex CLI auth directory. Default: `~/.codex`.         |
 | `OLLAMA_MODEL`         | Seeds the Ollama model.                               |
+| `OLLAMA_BASE_URL`      | Seeds the Ollama API base URL. Default: `http://localhost:11434/v1`. |
 | `AUTOPRESO_CACHE_LOG`  | Cache usage log path. Default: `~/.config/autopreso/logs/cache.log`. |
 | `AUTOPRESO_DEBUG_LOG`  | Agent debug log path. Default: `~/.config/autopreso/logs/debug.log`. |
 
-Local Moonshine transcription ships as an optional native sidecar for `darwin-arm64` and `darwin-x64`. On other platforms, choose OpenAI Realtime in the STT panel.
+Local Moonshine transcription ships as an optional native sidecar for `darwin-arm64` and `darwin-x64`. On other platforms, choose OpenAI Realtime or xAI Streaming in the STT panel.
 
 ## Credits
 
