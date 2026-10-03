@@ -29,6 +29,7 @@ export function createTranscriptTurnQueue({ runTurn, debounceMs = 150, maxWaitMs
   }
 
   function flushPending({ force = false } = {}) {
+    if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = null;
     if (pending.length === 0) return;
     const text = pending.join("\n");

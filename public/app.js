@@ -202,7 +202,7 @@ function App() {
     await agentInstructionsSavePromiseRef.current;
   }
 
-  function handleExcalidrawChange(elements) {
+  function handleExcalidrawChange() {
     // Only push user edits to the server while in live mode. In staging the
     // canvas is a client-side scratchpad; the server doesn't need to know.
     if (modeRef.current !== "live") return;
@@ -213,12 +213,15 @@ function App() {
     // line-numbered references. Sync only during the pre-listen window.
     if (listeningRef.current) return;
     if (pendingSceneRef.current) return;
+    if (!apiRef.current) return;
     clearTimeout(userElementsSyncTimerRef.current);
     userElementsSyncTimerRef.current = setTimeout(() => {
+      if (modeRef.current !== "live" || listeningRef.current || pendingSceneRef.current) return;
+      const excalidrawAPI = apiRef.current;
+      if (!excalidrawAPI) return;
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      const cleaned = nativeElementsToSkeletonForSync(elements ?? []);
-      if (cleaned.length === 0) return;
+      const cleaned = nativeElementsToSkeletonForSync(excalidrawAPI.getSceneElements());
       const hash = JSON.stringify(cleaned);
       if (hash === lastSyncedElementsHashRef.current) return;
       lastSyncedElementsHashRef.current = hash;
@@ -1589,7 +1592,7 @@ function AgentEditor({ settings, onSave, onCancel }) {
           }),
         )
       : null,
-    needsOpenAIKey
+    provider === "openai" && !settings.hasOpenAIKey
       ? field(
           "API key",
           React.createElement("input", {
@@ -1601,7 +1604,7 @@ function AgentEditor({ settings, onSave, onCancel }) {
           }),
         )
       : null,
-    needsXAIKey
+    provider === "xai" && !settings.hasXAIKey
       ? field(
           "API key",
           React.createElement("input", {
@@ -1891,7 +1894,7 @@ function TranscriptionEditor({ settings, onSave, onCancel }) {
     provider === "xai"
       ? field("Language", select(xaiLanguage, setXaiLanguage, XAI_STT_LANGUAGES, busy))
       : null,
-    needsOpenAIKey
+    provider === "openai" && !settings.hasOpenAIKey
       ? field(
           "API key",
           React.createElement("input", {
@@ -1903,7 +1906,7 @@ function TranscriptionEditor({ settings, onSave, onCancel }) {
           }),
         )
       : null,
-    needsXAIKey
+    provider === "xai" && !settings.hasXAIKey
       ? field(
           "API key",
           React.createElement("input", {

@@ -19,8 +19,8 @@ export function createXAITranscription({
   let rejectReady = null;
   let configured = false;
   let pendingAudio = [];
-  let lastPartialText = "";
-  let lastCommittedText = "";
+  let transcript = createTranscriptTracker({ sendTranscript, queueTranscript });
+  let doneRequested = false;
   let doneSent = false;
   let sessionContext = { keywords: [] };
 
@@ -45,30 +45,23 @@ export function createXAITranscription({
     rejectReady = null;
     configured = false;
     pendingAudio = [];
+    doneRequested = false;
     doneSent = false;
-    lastPartialText = "";
-    lastCommittedText = "";
+    transcript = createTranscriptTracker({ sendTranscript, queueTranscript });
   }
 
   function detachSocket() {
     if (!socket) return null;
     const previous = socket;
-    socket = null;
-    readyPromise = null;
-    resolveReady = null;
-    rejectReady = null;
-    configured = false;
-    pendingAudio = [];
-    doneSent = false;
-    lastPartialText = "";
-    lastCommittedText = "";
+    rejectReady?.(new Error("xAI STT connection was closed."));
+    resetSocketState();
     return previous;
   }
 
   function ensureSocket() {
-    if (socket && !doneSent) return socket;
+    if (socket && !doneRequested) return socket;
 
-    if (socket && doneSent) {
+    if (socket && doneRequested) {
       const previous = detachSocket();
       previous?.close();
     }
@@ -78,32 +71,29 @@ export function createXAITranscription({
       throw new Error("XAI_API_KEY is required for the xAI transcription provider.");
     }
 
-    readyPromise = new Promise((resolve, reject) => {
-      resolveReady = resolve;
-      rejectReady = reject;
-    });
-
     const nextSocket = createWebSocket(buildURL(), undefined, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
     });
+    readyPromise = new Promise((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    readyPromise.catch(() => {});
     socket = nextSocket;
 
     nextSocket.on("message", (raw) => {
       if (socket !== nextSocket) return;
       handleSocketMessage(raw.toString("utf8"), {
         sendTranscript,
-        queueTranscript,
-        getLastPartial: () => lastPartialText,
-        setLastPartial: (value) => { lastPartialText = value; },
-        getLastCommitted: () => lastCommittedText,
-        setLastCommitted: (value) => { lastCommittedText = value; },
+        transcript,
         onReady: () => {
           if (socket !== nextSocket) return;
           configured = true;
           for (const audio of pendingAudio) nextSocket.send(audio);
           pendingAudio = [];
+          if (doneRequested) sendDone();
           resolveReady?.();
         },
       });
@@ -124,16 +114,10 @@ export function createXAITranscription({
     return socket;
   }
 
-  function flushPartialAsTurn() {
-    const text = lastPartialText.trim();
-    if (!text || text === lastCommittedText) return;
-    lastCommittedText = text;
-    sendTranscript({ type: "transcript:committed", text });
-    queueTranscript(text);
-  }
-
   function sendDone() {
-    if (!socket || !configured || doneSent) return;
+    if (!socket) return;
+    doneRequested = true;
+    if (!configured || doneSent) return;
     doneSent = true;
     socket.send(JSON.stringify({ type: "audio.done" }));
   }
@@ -177,7 +161,7 @@ export function createXAITranscription({
       }
     },
     stop: () => {
-      flushPartialAsTurn();
+      transcript.flush();
       sendDone();
     },
     close: () => {
@@ -188,7 +172,7 @@ export function createXAITranscription({
   };
 }
 
-function handleSocketMessage(line, { sendTranscript, queueTranscript, getLastPartial, setLastPartial, getLastCommitted, setLastCommitted, onReady }) {
+function handleSocketMessage(line, { sendTranscript, transcript, onReady }) {
   if (!line.trim()) return;
 
   let message;
@@ -205,32 +189,87 @@ function handleSocketMessage(line, { sendTranscript, queueTranscript, getLastPar
   }
 
   if (message.type === "transcript.partial") {
-    const text = (message.text ?? "").trim();
-    if (text) {
-      setLastPartial(text);
-      sendTranscript({ type: "transcript:partial", text });
-    }
-    if (message.speech_final && text && text !== getLastCommitted()) {
-      setLastCommitted(text);
-      sendTranscript({ type: "transcript:committed", text });
-      queueTranscript(text);
-    }
+    transcript.partial(message);
     return;
   }
 
   if (message.type === "transcript.done") {
-    const text = (message.text ?? getLastPartial()).trim();
-    if (text && text !== getLastCommitted()) {
-      setLastCommitted(text);
-      sendTranscript({ type: "transcript:committed", text });
-      queueTranscript(text);
-    }
+    transcript.done(message);
     return;
   }
 
   if (message.type === "error") {
     sendTranscript({ type: "error", message: message.message ?? message.error?.message ?? "xAI STT error" });
   }
+}
+
+function createTranscriptTracker({ sendTranscript, queueTranscript }) {
+  let lastPartial = null;
+  const committed = [];
+  let completed = false;
+
+  function commit(message) {
+    const fullText = typeof message.text === "string" ? message.text.trim() : "";
+    if (!fullText) return;
+    const range = transcriptRange(message);
+    const overlapping = committed.filter((entry) => !range || !entry.range || (
+      entry.range.end > range.start + 1e-6 && entry.range.start < range.end - 1e-6
+    ));
+    let text = fullText;
+    if (overlapping.length > 0) {
+      if (range && overlapping.some((entry) => entry.range && entry.range.start <= range.start + 1e-6 && entry.range.end >= range.end - 1e-6)) return;
+      const words = message.words;
+      if (overlapping.every((entry) => entry.range) && Array.isArray(words) && words.length > 0 && words.every((word) => Number.isFinite(word.end))) {
+        text = words.filter((word) => !overlapping.some((entry) => (
+          word.end > entry.range.start + 1e-6 && word.end <= entry.range.end + 1e-6
+        ))).map((word) => word.text).join(" ").trim();
+      } else if (range || message.type === "transcript.done") {
+        const prefix = overlapping.map((entry) => entry.text).join(" ").replace(/\s+/g, " ");
+        const normalized = fullText.replace(/\s+/g, " ");
+        const suffix = normalized.slice(prefix.length);
+        const boundary = !suffix || /[\s.,!?;:]$/u.test(prefix) || /^[\s.,!?;:]/u.test(suffix);
+        text = normalized.startsWith(prefix) && boundary ? suffix.replace(/^[\s.,!?;:]+/u, "") : "";
+      } else if (fullText === committed.at(-1)?.text) {
+        return;
+      }
+    }
+    if (!text) return;
+    committed.push({ text, range });
+    sendTranscript({ type: "transcript:committed", text });
+    queueTranscript(text);
+  }
+
+  return {
+    partial: (message) => {
+      if (completed) return;
+      const text = typeof message.text === "string" ? message.text.trim() : "";
+      if (text) {
+        lastPartial = message;
+        sendTranscript({ type: "transcript:partial", text });
+      }
+      if (message.speech_final) {
+        commit(message);
+        lastPartial = null;
+      }
+    },
+    done: (message) => {
+      if (completed) return;
+      if (message.text != null) commit(message);
+      else if (lastPartial) commit(lastPartial);
+      lastPartial = null;
+      completed = true;
+    },
+    flush: () => {
+      if (lastPartial) commit(lastPartial);
+      lastPartial = null;
+    },
+  };
+}
+
+function transcriptRange(message) {
+  const start = message.type === "transcript.done" ? 0 : message.start;
+  if (!Number.isFinite(start) || !Number.isFinite(message.duration) || message.duration < 0) return null;
+  return { start, end: start + message.duration };
 }
 
 function normalizeLanguage(value) {

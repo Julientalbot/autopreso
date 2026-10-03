@@ -281,6 +281,7 @@ export async function startServer(options) {
 async function createTranscriptionManager({ options, wss, queueTranscript, state }) {
   let current = null;
   let label = "";
+  let currentConfiguration = null;
   let sessionContext = null;
   let hasSessionContext = false;
   let activeProvider = null;
@@ -344,11 +345,19 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
         ? "streaming"
         : (settings?.transcription.moonshine.model ?? options.moonshineModel ?? null);
 
-    if (current && newLabel === label) return;
+    const factoryOptions = buildOptionsForFactory(settings);
+    const env = factoryOptions.env ?? process.env;
+    const configuration = JSON.stringify(activeProvider === "xai"
+      ? [activeProvider, factoryOptions.xaiSttLanguage, factoryOptions.xaiSttSmartTurnTimeoutMs, env.XAI_API_KEY]
+      : activeProvider === "openai"
+        ? [activeProvider, factoryOptions.openaiTranscriptionModel, env.OPENAI_API_KEY]
+        : [activeProvider, factoryOptions.moonshineModel]);
+
+    if (current && configuration === currentConfiguration) return;
 
     if (current) current.close();
+    currentConfiguration = null;
 
-    const factoryOptions = buildOptionsForFactory(settings);
     const factory = pickFactory(settings);
     label = newLabel;
     options.onStatus?.(`Preparing ${label} transcription model...`);
@@ -360,6 +369,7 @@ async function createTranscriptionManager({ options, wss, queueTranscript, state
     });
     if (hasSessionContext) current.setSessionContext?.(sessionContext);
     await current.ready();
+    currentConfiguration = configuration;
     options.onStatus?.(`${label} transcription model ready.`);
   }
 

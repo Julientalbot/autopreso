@@ -3,6 +3,25 @@ import { test } from "node:test";
 
 import { createTranscriptTurnQueue } from "../src/transcript-turn-queue.js";
 
+test("max wait cancels the previous batch debounce before a new batch arrives", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const turns = [];
+  const queue = createTranscriptTurnQueue({
+    runTurn: async (text) => { turns.push(text); },
+    debounceMs: 100,
+    maxWaitMs: 80,
+  });
+  queue.enqueue("first batch");
+  t.mock.timers.tick(80);
+  await queue.idle();
+  queue.enqueue("second batch");
+  t.mock.timers.tick(20);
+  assert.deepEqual(turns, ["first batch"]);
+  t.mock.timers.tick(60);
+  await queue.idle();
+  assert.deepEqual(turns, ["first batch", "second batch"]);
+});
+
 test("queue with debounce 0 sends a transcript immediately", async () => {
   const turns = [];
   const queue = createTranscriptTurnQueue({

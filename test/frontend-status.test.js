@@ -74,7 +74,7 @@ test("frontend queues live whiteboard updates until Excalidraw is ready", () => 
   assert.match(appSource, /pendingViewportRef\.current = command/);
   assert.match(appSource, /if \(pendingSceneRef\.current\) return/);
   assert.match(appSource, /clearTimeout\(userElementsSyncTimerRef\.current\)/);
-  assert.match(appSource, /if \(cleaned\.length === 0\) return/);
+  assert.match(appSource, /nativeElementsToSkeletonForSync\(excalidrawAPI\.getSceneElements\(\)\)/);
   assert.match(appSource, /lastSyncedElementsHashRef\.current = JSON\.stringify\([\s\S]*nativeElementsToSkeletonForSync\(renderable\)/);
   assert.match(appSource, /if \(pendingSceneRef\.current\)[\s\S]*applyScene\(pending\.elements, \{ recenter: pending\.recenter \}\)/);
   assert.match(appSource, /if \(pendingViewportRef\.current\)[\s\S]*applyWhiteboardViewportCommand\(pending\)/);

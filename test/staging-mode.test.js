@@ -1027,3 +1027,71 @@ test("empty agentInstructions adds nothing to the system prompt", async () => {
     await new Promise((resolve) => httpServer.close(resolve));
   }
 });
+
+for (const provider of ["xai", "openai"]) {
+  test(`settings reload detects effective ${provider} credentials and configuration`, async () => {
+    const instances = [];
+    const settings = {
+      agent: { provider: "openai", openai: { model: "gpt-5.4-mini", reasoningEffort: "none" } },
+      transcription: {
+        provider,
+        xai: { language: "en", smartTurnTimeoutMs: 1200 },
+        openai: { model: "gpt-4o-transcribe" },
+        moonshine: { model: "medium" },
+      },
+      apiKeys: { xai: "first-xai", openai: "first-openai" },
+    };
+    const settingsStore = {
+      load: async () => settings,
+      save: async (patch) => {
+        if (patch.transcription?.xai) Object.assign(settings.transcription.xai, patch.transcription.xai);
+        if (patch.apiKeys) Object.assign(settings.apiKeys, patch.apiKeys);
+      },
+      getSanitized: async () => ({ transcription: settings.transcription }),
+    };
+    const createTranscription = ({ options, env }) => {
+      const instance = {
+        options, env, closed: false, contexts: [],
+        ready: async () => {}, sendAudio: () => {}, stop: () => {},
+        close: () => { instance.closed = true; },
+        setSessionContext: (ctx) => { instance.contexts.push(ctx); },
+      };
+      instances.push(instance);
+      return instance;
+    };
+    const { httpServer, url } = await startTestServer({ settingsStore, createTranscription });
+    const save = async (patch) => {
+      const response = await fetch(`${url}/api/settings`, {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch),
+      });
+      assert.equal(response.status, 200);
+      assert.doesNotMatch(await response.text(), /first-xai|first-openai|replacement-key/);
+    };
+    try {
+      await fetch(`${url}/api/preso/start`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stagingElements: [{ type: "text", id: "t1", text: "Kafka" }] }),
+      });
+      await save({});
+      assert.equal(instances.length, 1);
+      await save({ apiKeys: { [provider === "xai" ? "openai" : "xai"]: "unrelated" } });
+      assert.equal(instances.length, 1);
+      if (provider === "xai") {
+        await save({ transcription: { xai: { smartTurnTimeoutMs: 700 } } });
+        assert.equal(instances.length, 2);
+        assert.equal(instances.at(-1).options.xaiSttSmartTurnTimeoutMs, 700);
+      }
+      const previous = instances.at(-1);
+      const count = instances.length;
+      await save({ apiKeys: { [provider]: "replacement-key" } });
+      assert.equal(instances.length, count + 1);
+      assert.equal(previous.closed, true);
+      assert.equal(instances.at(-1).env[provider === "xai" ? "XAI_API_KEY" : "OPENAI_API_KEY"], "replacement-key");
+      assert.deepEqual(instances.at(-1).contexts.at(-1), { keywords: ["Kafka"] });
+      await save({});
+      assert.equal(instances.length, count + 1);
+    } finally {
+      await new Promise((resolve) => httpServer.close(resolve));
+    }
+  });
+}

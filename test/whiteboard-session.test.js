@@ -3,6 +3,29 @@ import { test } from "node:test";
 
 import { createWhiteboardSession, isReadyTranscriptTurn, isTrivialTranscript } from "../src/whiteboard-session.js";
 
+for (const flush of ["max wait", "idle"]) {
+  test(`session skips fillers on ${flush} but still processes short substantive fragments`, async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const turns = [];
+    const events = [];
+    const session = createWhiteboardSession({
+      options: { transcriptTurnDebounceMs: 10, transcriptTurnMaxWaitMs: 100, onAgentEvent: (event) => events.push(event) },
+      wss: { clients: new Set() },
+      runAgent: async ({ transcript }) => { turns.push(transcript); },
+    });
+    session.mode = "live";
+    session.queueTranscript("uh");
+    if (flush === "max wait") t.mock.timers.tick(100);
+    await session.idle();
+    assert.deepEqual(turns, []);
+    assert.deepEqual(events, []);
+    session.queueTranscript("a short fragment");
+    if (flush === "max wait") t.mock.timers.tick(100);
+    await session.idle();
+    assert.deepEqual(turns, ["a short fragment"]);
+  });
+}
+
 test("isTrivialTranscript skips fillers and ultra-short utterances", () => {
   // Fillers
   for (const filler of ["uh", "um", "yeah", "ok", "right", "hmm", "well"]) {
