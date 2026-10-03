@@ -191,6 +191,14 @@ test("whiteboard agent history appends transcript only", () => {
 
 import { extractAgentUsage } from "../src/server.js";
 
+test("extractAgentUsage prefers total usage across all SDK steps", () => {
+  const usage = extractAgentUsage({
+    usage: { inputTokens: 1000, outputTokens: 100, cachedInputTokens: 500, reasoningTokens: 10 },
+    totalUsage: { inputTokens: 3000, outputTokens: 250, cachedInputTokens: 1200, reasoningTokens: 30 },
+  });
+  assert.deepEqual(usage, { input: 3000, cached: 1200, output: 250, reasoning: 30 });
+});
+
 test("extractAgentUsage handles AI SDK shape with cachedInputTokens", () => {
   const usage = extractAgentUsage({
     usage: { inputTokens: 5000, outputTokens: 30, cachedInputTokens: 4500 },

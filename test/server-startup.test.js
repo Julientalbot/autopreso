@@ -9,6 +9,7 @@ import path from "node:path";
 
 import { DEFAULT_AGENT_TIMEOUT_MS, runWhiteboardAgent, startServer, whiteboardSystemPrompt } from "../src/server.js";
 import { createSettingsStore } from "../src/settings-store.js";
+import { createSessionCostTracker } from "../src/session-cost.js";
 import { resetXaiModelCatalog } from "../src/xai-models.js";
 
 test("default whiteboard agent timeout is 90 seconds", () => {
@@ -547,10 +548,11 @@ test("runWhiteboardAgent disables Codex response storage", async () => {
 
 test("runWhiteboardAgent uses streaming for Codex responses", async () => {
   let consumed = false;
+  const cost = createSessionCostTracker();
 
   await runWhiteboardAgent({
     transcript: "hello",
-    state: { elements: [], agentHistory: [] },
+    state: { elements: [], agentHistory: [], cost },
     wss: { clients: new Set() },
     options: {
       agentProvider: {
@@ -568,10 +570,13 @@ test("runWhiteboardAgent uses streaming for Codex responses", async () => {
       consumeStream: async () => {
         consumed = true;
       },
+      usage: Promise.resolve({ inputTokens: 1000, outputTokens: 100, cachedInputTokens: 500, reasoningTokens: 10 }),
+      totalUsage: Promise.resolve({ inputTokens: 3000, outputTokens: 250, cachedInputTokens: 1200, reasoningTokens: 30 }),
     }),
   });
 
   assert.equal(consumed, true);
+  assert.deepEqual(cost.getSummary().agent.tokens, { input: 3000, cached: 1200, output: 250, reasoning: 30 });
 });
 
 function collectWebSocketMessages(url, count) {

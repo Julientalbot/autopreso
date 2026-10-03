@@ -622,6 +622,7 @@ async function runWhiteboardAgentGeneration(agentProvider, agentCallOptions, { g
     text: await safeGet("text"),
     finishReason: await safeGet("finishReason"),
     usage: await safeGet("usage"),
+    totalUsage: await safeGet("totalUsage"),
     toolCalls: await safeGet("toolCalls"),
     toolResults: await safeGet("toolResults"),
     steps: await safeGet("steps"),
@@ -839,7 +840,8 @@ export function dumpToolCall(toolName, input, sceneIds, result) {
 }
 
 export function extractAgentUsage(result) {
-  const usage = result?.usage ?? {};
+  // SDK usage covers only the final step; totalUsage includes tool-call steps.
+  const usage = result?.totalUsage ?? result?.usage ?? {};
   const input = usage.inputTokens ?? usage.promptTokens ?? usage.input_tokens ?? usage.prompt_tokens ?? 0;
   const output = usage.outputTokens ?? usage.completionTokens ?? usage.output_tokens ?? usage.completion_tokens ?? 0;
   const cached = usage.cachedInputTokens
