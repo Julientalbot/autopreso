@@ -83,7 +83,7 @@ export async function startServer(options) {
   // Warm the xAI catalog in the background so pricing and reasoning-effort
   // clamping use live data from the first turn. Only when xAI is the agent,
   // so tests and other providers never touch the network.
-  if (options.settingsStore && (await options.settingsStore.load()).agent.provider === "xai") {
+  if (options.settingsStore && (await options.settingsStore.load())?.agent?.provider === "xai") {
     void refreshXaiModels();
   }
 
