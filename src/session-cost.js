@@ -1,8 +1,11 @@
-// Session cost tracking. The numbers in AGENT_PRICING / TRANSCRIPTION_PRICING
-// are list pricing as of June 2026 - update them in one place if providers
-// change their rate cards. Local providers (moonshine, ollama) are billed at
-// $0; codex routes through the user's ChatGPT subscription so it isn't
-// billed per-token here either.
+// Session cost tracking. OpenAI rates are the June 2026 list prices in
+// AGENT_PRICING / TRANSCRIPTION_PRICING - update them in one place if OpenAI
+// changes its rate card. xAI agent rates come from src/xai-models.js (live
+// /v1/language-models, built-in fallback). Local providers (moonshine,
+// ollama) are billed at $0; codex routes through the user's ChatGPT
+// subscription so it isn't billed per-token here either.
+
+import { findXaiModel } from "./xai-models.js";
 
 const SAMPLE_RATE_HZ = 24_000;
 const PCM16_BYTES_PER_SAMPLE = 2;
@@ -15,10 +18,6 @@ export const AGENT_PRICING = {
     "gpt-5.5":      { input: 5.00, cachedInput: 0.50,  output: 30.00 },
     "gpt-5.4":      { input: 2.50, cachedInput: 0.25,  output: 15.00 },
     "gpt-5.4-mini": { input: 0.75, cachedInput: 0.075, output:  4.50 },
-  },
-  xai: {
-    "grok-4.3":      { input: 1.25, cachedInput: 0.20, output: 2.50 },
-    "grok-build-0.1": { input: 1.00, cachedInput: 0.20, output: 2.00 },
   },
 };
 
@@ -39,7 +38,7 @@ export const TRANSCRIPTION_PRICING = {
 export function computeAgentCost({ provider, model, usage }) {
   if (provider === "ollama") return { priced: false, cost: 0, reason: "local" };
   if (provider === "codex") return { priced: false, cost: 0, reason: "subscription" };
-  const rates = AGENT_PRICING[provider]?.[model];
+  const rates = provider === "xai" ? findXaiModel(model)?.pricing : AGENT_PRICING[provider]?.[model];
   if (!rates) return { priced: false, cost: 0, reason: "unknown" };
   const input = Number(usage?.input) || 0;
   const cached = Math.min(Number(usage?.cached) || 0, input);

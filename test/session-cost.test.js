@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { computeAgentCost, computeTranscriptionCost, createSessionCostTracker } from "../src/session-cost.js";
+import { refreshXaiModelCatalog, resetXaiModelCatalog } from "../src/xai-models.js";
 
 test("computeAgentCost prices uncached input, cached input, and output separately", () => {
   // gpt-5.5: $5.00 input, $0.50 cached, $30.00 output per 1M tokens
@@ -174,4 +175,21 @@ test("createSessionCostTracker remembers the last seen model and provider", () =
   assert.equal(summary.agent.model, "gpt-5.4-mini");
   assert.equal(summary.transcription.provider, "openai");
   assert.equal(summary.transcription.model, "whisper-1");
+});
+
+test("computeAgentCost prices xAI models from the live catalog", async () => {
+  await refreshXaiModelCatalog({
+    apiKey: "k",
+    fetchFn: async () => ({
+      ok: true,
+      json: async () => ({ models: [{ id: "grok-9", prompt_text_token_price: 30000, cached_prompt_text_token_price: 5000, completion_text_token_price: 90000 }] }),
+    }),
+  });
+  try {
+    const cost = computeAgentCost({ provider: "xai", model: "grok-9", usage: { input: 1_000_000, cached: 0, output: 0, reasoning: 0 } });
+    assert.ok(cost.priced);
+    assert.equal(cost.cost.toFixed(2), "3.00");
+  } finally {
+    resetXaiModelCatalog();
+  }
 });
