@@ -18,7 +18,7 @@ import {
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
 import { createXAITranscription as createDefaultXAITranscription } from "./xai-transcription.js";
-import { resolveXaiReasoningEffort } from "./xai-models.js";
+import { refreshXaiModelCatalog, resolveXaiReasoningEffort } from "./xai-models.js";
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession, isTrivialTranscript } from "./whiteboard-session.js";
@@ -69,6 +69,28 @@ export async function startServer(options) {
       state.endSession();
     }
   }
+
+  async function refreshXaiModels() {
+    const settings = options.settingsStore ? await options.settingsStore.load() : null;
+    const env = options.env ?? process.env;
+    return refreshXaiModelCatalog({
+      apiKey: settings?.apiKeys?.xai || env.XAI_API_KEY,
+      baseURL: settings?.agent?.xai?.baseURL,
+      fetchFn: options.fetchFn ?? fetch,
+    });
+  }
+
+  // Warm the xAI catalog in the background so pricing and reasoning-effort
+  // clamping use live data from the first turn. Only when xAI is the agent,
+  // so tests and other providers never touch the network.
+  if (options.settingsStore && (await options.settingsStore.load()).agent.provider === "xai") {
+    void refreshXaiModels();
+  }
+
+  app.get("/api/agent/xai/models", async (_req, res) => {
+    const { models, source } = await refreshXaiModels();
+    res.json({ source, models: models.map(({ id, reasoningEfforts }) => ({ id, reasoningEfforts })) });
+  });
 
   app.get("/api/config", async (_req, res) => {
     const sanitized = options.settingsStore ? await options.settingsStore.getSanitized() : null;

@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { WebSocket } from "ws";
 
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { DEFAULT_AGENT_TIMEOUT_MS, runWhiteboardAgent, startServer, whiteboardSystemPrompt } from "../src/server.js";
+import { createSettingsStore } from "../src/settings-store.js";
+import { resetXaiModelCatalog } from "../src/xai-models.js";
 
 test("default whiteboard agent timeout is 90 seconds", () => {
   assert.equal(DEFAULT_AGENT_TIMEOUT_MS, 90_000);
@@ -591,3 +597,39 @@ function collectWebSocketMessages(url, count) {
     });
   });
 }
+
+test("GET /api/agent/xai/models returns the live xAI catalog without prices or keys", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "autopreso-xai-models-"));
+  const settingsStore = createSettingsStore({
+    filePath: path.join(dir, "settings.json"),
+    env: { XAI_API_KEY: "xai-test" },
+    readCodexAuth: () => null,
+  });
+  const fetchCalls = [];
+  const { httpServer, url } = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    settingsStore,
+    fetchFn: async (requestUrl, init) => {
+      fetchCalls.push({ requestUrl, auth: init.headers.Authorization });
+      return {
+        ok: true,
+        json: async () => ({ models: [{ id: "grok-9", prompt_text_token_price: 1, completion_text_token_price: 1, capabilities: { reasoning_effort: ["low", "high"] } }] }),
+      };
+    },
+    createTranscription: () => ({ ready: async () => {}, sendAudio: () => {}, stop: () => {}, close: () => {} }),
+  });
+  try {
+    const res = await fetch(`${url}/api/agent/xai/models`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      source: "api",
+      models: [{ id: "grok-9", reasoningEfforts: ["low", "high"] }],
+    });
+    assert.ok(fetchCalls.length > 0);
+    assert.ok(fetchCalls.every((call) => call.requestUrl === "https://api.x.ai/v1/language-models" && call.auth === "Bearer xai-test"));
+  } finally {
+    await new Promise((resolve) => httpServer.close(resolve));
+    resetXaiModelCatalog();
+  }
+});
