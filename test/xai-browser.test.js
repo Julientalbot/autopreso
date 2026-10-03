@@ -102,7 +102,9 @@ test(`xAI browser settings to whiteboard (${live ? "live speech and xAI APIs" : 
       }));
     });
     await new Promise((resolve) => fixture.listen(0, "127.0.0.1", resolve));
-    baseURL = `http://127.0.0.1:${fixture.address().port}/v1`;
+    const address = fixture.address();
+    assert.ok(address && typeof address === "object", "fixture must listen on a TCP port");
+    baseURL = `http://127.0.0.1:${address.port}/v1`;
   }
   globalThis.fetch = async (url, init) => {
     let request;
