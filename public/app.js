@@ -11,7 +11,6 @@ import { STARTER_ELEMENTS } from "./starter-elements.js";
 const SAMPLE_RATE = 24000;
 const REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"];
 const OPENAI_AGENT_MODELS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"];
-const XAI_AGENT_MODELS = ["grok-4.3", "grok-build-0.1"];
 const CODEX_AGENT_MODELS = ["gpt-5.5-fast", "gpt-5.5", "gpt-5.4"];
 const OPENAI_TRANSCRIPTION_MODELS = [
   "gpt-realtime-whisper",
@@ -1446,6 +1445,36 @@ function AgentEditor({ settings, onSave, onCancel }) {
   const [xaiBaseURL, setXaiBaseURL] = React.useState(
     settings.agent.xai.baseURL,
   );
+  const [xaiReasoningEffort, setXaiReasoningEffort] = React.useState(
+    settings.agent.xai.reasoningEffort ?? "none",
+  );
+  // Until the server answers, offer the saved model with every effort.
+  const [xaiModels, setXaiModels] = React.useState([
+    { id: settings.agent.xai.model, reasoningEfforts: REASONING_EFFORTS },
+  ]);
+  React.useEffect(() => {
+    if (provider !== "xai") return undefined;
+    let cancelled = false;
+    fetch("/api/agent/xai/models")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.models) && data.models.length > 0) {
+          setXaiModels(data.models);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+  const xaiModelIds = xaiModels.map((model) => model.id);
+  if (xaiModel && !xaiModelIds.includes(xaiModel)) xaiModelIds.unshift(xaiModel);
+  const xaiEfforts =
+    xaiModels.find((model) => model.id === xaiModel)?.reasoningEfforts ??
+    REASONING_EFFORTS;
+  const xaiEffortShown = xaiEfforts.includes(xaiReasoningEffort)
+    ? xaiReasoningEffort
+    : xaiEfforts[0];
   const [codexModel, setCodexModel] = React.useState(
     settings.agent.codex.model,
   );
@@ -1475,6 +1504,7 @@ function AgentEditor({ settings, onSave, onCancel }) {
     } else if (provider === "xai") {
       patch.agent.xai.model = xaiModel;
       patch.agent.xai.baseURL = xaiBaseURL;
+      if (xaiEffortShown) patch.agent.xai.reasoningEffort = xaiEffortShown;
     } else if (provider === "codex") {
       patch.agent.codex.model = codexModel;
     } else {
@@ -1522,7 +1552,13 @@ function AgentEditor({ settings, onSave, onCancel }) {
         )
       : null,
     provider === "xai"
-      ? field("Model", select(xaiModel, setXaiModel, XAI_AGENT_MODELS, busy))
+      ? field("Model", select(xaiModel, setXaiModel, xaiModelIds, busy))
+      : null,
+    provider === "xai" && xaiEfforts.length > 0
+      ? field(
+          "Reasoning",
+          select(xaiEffortShown, setXaiReasoningEffort, xaiEfforts, busy),
+        )
       : null,
     provider === "codex"
       ? field(

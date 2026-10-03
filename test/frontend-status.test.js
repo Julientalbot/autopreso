@@ -93,7 +93,6 @@ test("frontend exposes OpenAI agent base URL and labels the key as API key", () 
 test("frontend exposes xAI agent and transcription settings", () => {
   const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
 
-  assert.match(appSource, /const XAI_AGENT_MODELS = \[/);
   assert.match(appSource, /React\.createElement\("option", \{ value: "xai" \}, "xAI"\)/);
   assert.match(appSource, /settings\.agent\.xai\.model/);
   assert.match(appSource, /settings\.transcription\.xai\.language/);
@@ -112,4 +111,11 @@ test("frontend exposes transcript latency settings in the status panel", () => {
   assert.match(appSource, /transcriptTurnDebounceMs: clampNumber/);
   assert.match(appSource, /transcriptTurnMaxWaitMs: clampNumber/);
   assert.match(appSource, /smartTurnTimeoutMs: clampNumber/);
+});
+
+test("agent editor loads xAI models from the server and saves xAI reasoning effort", () => {
+  const appSource = readFileSync(path.join(rootDir, "public", "app.js"), "utf8");
+  assert.match(appSource, /fetch\("\/api\/agent\/xai\/models"\)/);
+  assert.match(appSource, /(?:if \(xaiEffortShown\) )?patch\.agent\.xai\.reasoningEffort = xaiEffortShown/);
+  assert.doesNotMatch(appSource, /const XAI_AGENT_MODELS = \[/);
 });
