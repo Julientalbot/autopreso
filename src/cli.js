@@ -88,6 +88,7 @@ Environment:
   XAI_API_KEY              Seeds the xAI key for both agent and streaming STT
   XAI_MODEL                Seeds the xAI agent model on first run
   XAI_BASE_URL             Seeds the xAI agent API base URL on first run
+  XAI_REASONING_EFFORT     Seeds xAI agent reasoning effort (none, low, medium, high, xhigh). Default: none
   XAI_STT_LANGUAGE         Seeds the xAI STT language code. Default: en
   XAI_STT_SMART_TURN_TIMEOUT_MS
                            Seeds xAI STT end-of-turn timeout. Default: 1200

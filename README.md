@@ -107,7 +107,7 @@ Settings persist at `~/.config/autopreso/settings.json` and are managed from the
 Agent instructions are saved automatically from staging, can be up to 100,000 characters, and take effect on the next Start Preso.
 The Latency row in the status panel controls xAI STT end-of-turn timeout plus transcript-to-agent debounce and max-wait timing.
 The live Session cost card estimates agent token costs and cloud transcription audio costs for the current presentation, resetting on Start Preso or session reset.
-OpenAI and xAI prices use the built-in June 2026 rate table; local providers show `$0.0000`, Codex shows token volume because it routes through your subscription, and unknown models show `n/a`.
+OpenAI prices use the built-in June 2026 rate table. xAI prices and the xAI model list come from xAI's `/v1/language-models` endpoint, with a built-in fallback when it is unreachable. Local providers show `$0.0000`, Codex shows token volume because it routes through your subscription, and unknown models show `n/a`.
 
 ### Defaults on first run
 
@@ -137,6 +137,7 @@ Provider variables only seed `settings.json` on first run. Once the file exists,
 | `XAI_API_KEY`          | Seeds the xAI key for both agent and Streaming STT.   |
 | `XAI_MODEL`            | Seeds the xAI agent model.                            |
 | `XAI_BASE_URL`         | Seeds the xAI agent API base URL.                     |
+| `XAI_REASONING_EFFORT` | Seeds the xAI agent reasoning effort. Default: `none` (lowest latency); models that reject it get the nearest supported level. |
 | `XAI_STT_LANGUAGE`     | Seeds the xAI STT language code. Default: `en`.       |
 | `XAI_STT_SMART_TURN_TIMEOUT_MS` | Seeds xAI STT end-of-turn timeout. Default: `1200`. |
 | `AUTOPRESO_TRANSCRIPT_TURN_DEBOUNCE_MS` | Seeds transcript-to-agent debounce. Default: `250`. |
