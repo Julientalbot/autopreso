@@ -385,7 +385,7 @@ test("runWhiteboardAgent disables parallel tool calls for xAI", async () => {
     },
     generateTextFn: async ({ providerOptions }) => {
       assert.deepEqual(providerOptions, {
-        xai: { parallelToolCalls: false },
+        openai: { parallelToolCalls: false },
       });
     },
   });

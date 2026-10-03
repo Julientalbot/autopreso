@@ -875,10 +875,12 @@ export function logAgentUsage(label, result, extras = {}) {
   }
 }
 
-function createWhiteboardAgentProviderOptions(agentProvider, effectiveSystem) {
+export function createWhiteboardAgentProviderOptions(agentProvider, effectiveSystem) {
   if (agentProvider.provider === "xai") {
+    // @ai-sdk/openai's chat model reads provider options under "openai"
+    // whatever the provider name, so an "xai" key would be silently dropped.
     return {
-      xai: {
+      openai: {
         parallelToolCalls: false,
       },
     };
