@@ -77,13 +77,23 @@ test("resolveAgentProviderFromSettings returns xAI provider from settings + key"
   settings.apiKeys.xai = "xai-from-settings";
   settings.agent.xai.model = "grok-build-0.1";
   settings.agent.xai.baseURL = "https://gateway.xai.example.test/v1/";
+  settings.agent.xai.reasoningEffort = "low";
 
   assert.deepEqual(resolveAgentProviderFromSettings({ settings, env: {} }), {
     provider: "xai",
     model: "grok-build-0.1",
     apiKey: "xai-from-settings",
     baseURL: "https://gateway.xai.example.test/v1",
+    reasoningEffort: "low",
   });
+});
+
+test("resolveAgentProviderFromSettings defaults xAI reasoning effort to none", () => {
+  const settings = settingsBase();
+  settings.agent.provider = "xai";
+  settings.apiKeys.xai = "k";
+  const resolved = /** @type {{ reasoningEffort?: string }} */ (resolveAgentProviderFromSettings({ settings, env: {} }));
+  assert.equal(resolved.reasoningEffort, "none");
 });
 
 test("resolveAgentProviderFromSettings falls back to env XAI_API_KEY", () => {

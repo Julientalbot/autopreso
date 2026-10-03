@@ -6,6 +6,7 @@ const DEFAULT_OPENAI_AGENT_MODEL = "gpt-5.5";
 const DEFAULT_CODEX_AGENT_MODEL = "gpt-5.5-fast";
 const DEFAULT_XAI_AGENT_MODEL = "grok-4.3";
 const DEFAULT_OPENAI_REASONING_EFFORT = "low";
+const DEFAULT_XAI_REASONING_EFFORT = "none";
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_XAI_BASE_URL = "https://api.x.ai/v1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
@@ -56,6 +57,7 @@ export function resolveAgentProviderFromSettings({ settings, env = process.env }
       model: settings.agent.xai.model || DEFAULT_XAI_AGENT_MODEL,
       apiKey,
       baseURL: withoutTrailingSlash(cleanEnvValue(settings.agent.xai.baseURL) ?? DEFAULT_XAI_BASE_URL),
+      reasoningEffort: validateReasoningEffort(settings.agent.xai.reasoningEffort || DEFAULT_XAI_REASONING_EFFORT),
     };
   }
 

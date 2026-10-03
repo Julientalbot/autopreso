@@ -201,3 +201,17 @@ test("createSettingsStore preserves previously-saved values across reloads, igno
   assert.equal(settings.agent.openai.model, "gpt-5-mini");
   assert.equal(settings.apiKeys.openai, "sk-original");
 });
+
+test("xAI agent reasoning effort defaults to none", () => {
+  assert.equal(DEFAULT_SETTINGS.agent.xai.reasoningEffort, "none");
+});
+
+test("createSettingsStore seeds xAI reasoning effort from XAI_REASONING_EFFORT", async () => {
+  const store = createSettingsStore({
+    filePath: await tempPath(),
+    env: { XAI_API_KEY: "xai-env", XAI_REASONING_EFFORT: "low" },
+    readCodexAuth: noCodexAuth,
+  });
+  const settings = await store.load();
+  assert.equal(settings.agent.xai.reasoningEffort, "low");
+});

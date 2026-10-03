@@ -14,7 +14,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   agent: {
     provider: "openai",
     openai: { model: "gpt-5.5", reasoningEffort: "low", baseURL: "https://api.openai.com/v1" },
-    xai: { model: "grok-4.3", baseURL: "https://api.x.ai/v1" },
+    xai: { model: "grok-4.3", reasoningEffort: "none", baseURL: "https://api.x.ai/v1" },
     codex: { model: "gpt-5.5-fast", baseURL: "https://chatgpt.com/backend-api/codex" },
     ollama: { model: "", baseURL: "http://localhost:11434/v1" },
   },
@@ -126,6 +126,9 @@ function seedFromEnv(settings, env, readCodexAuth) {
 
   const xaiBaseURL = trimOrEmpty(env.XAI_BASE_URL);
   if (xaiBaseURL) next.agent.xai.baseURL = xaiBaseURL;
+
+  const xaiReasoningEffort = trimOrEmpty(env.XAI_REASONING_EFFORT);
+  if (xaiReasoningEffort) next.agent.xai.reasoningEffort = xaiReasoningEffort;
 
   const xaiSttLanguage = trimOrEmpty(env.XAI_STT_LANGUAGE);
   if (xaiSttLanguage) next.transcription.xai.language = xaiSttLanguage;
