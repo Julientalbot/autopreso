@@ -380,12 +380,13 @@ test("runWhiteboardAgent disables parallel tool calls for xAI", async () => {
         provider: "xai",
         model: "grok-4.3",
         baseURL: "https://api.x.ai/v1",
+        reasoningEffort: "none",
         apiKey: "test",
       },
     },
     generateTextFn: async ({ providerOptions }) => {
       assert.deepEqual(providerOptions, {
-        openai: { parallelToolCalls: false },
+        openai: { parallelToolCalls: false, reasoningEffort: "none" },
       });
     },
   });

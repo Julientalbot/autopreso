@@ -18,6 +18,7 @@ import {
 import { createMoonshineTranscription as createDefaultMoonshineTranscription } from "./moonshine-transcription.js";
 import { createOpenAITranscription as createDefaultOpenAITranscription } from "./openai-transcription.js";
 import { createXAITranscription as createDefaultXAITranscription } from "./xai-transcription.js";
+import { resolveXaiReasoningEffort } from "./xai-models.js";
 import { audioSecondsFromBase64Pcm16 } from "./session-cost.js";
 import { validateAgentInstructions } from "./settings-store.js";
 import { broadcast, createWhiteboardSession, isTrivialTranscript } from "./whiteboard-session.js";
@@ -879,9 +880,11 @@ export function createWhiteboardAgentProviderOptions(agentProvider, effectiveSys
   if (agentProvider.provider === "xai") {
     // @ai-sdk/openai's chat model reads provider options under "openai"
     // whatever the provider name, so an "xai" key would be silently dropped.
+    const reasoningEffort = resolveXaiReasoningEffort(agentProvider.model, agentProvider.reasoningEffort);
     return {
       openai: {
         parallelToolCalls: false,
+        ...(reasoningEffort ? { reasoningEffort } : {}),
       },
     };
   }

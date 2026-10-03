@@ -32,3 +32,18 @@ test("xAI requests disable parallel tool calls on the wire", async () => {
   const body = await captureXaiRequestBody({ provider: "xai", model: "grok-4.3" });
   assert.equal(body.parallel_tool_calls, false);
 });
+
+test("grok-4.3 requests send reasoning_effort none", async () => {
+  const body = await captureXaiRequestBody({ provider: "xai", model: "grok-4.3", reasoningEffort: "none" });
+  assert.equal(body.reasoning_effort, "none");
+});
+
+test("grok-4.7 requests send the nearest supported effort instead of none", async () => {
+  const body = await captureXaiRequestBody({ provider: "xai", model: "grok-4.7", reasoningEffort: "none" });
+  assert.equal(body.reasoning_effort, "low");
+});
+
+test("grok-build-0.1 requests omit reasoning_effort", async () => {
+  const body = await captureXaiRequestBody({ provider: "xai", model: "grok-build-0.1", reasoningEffort: "none" });
+  assert.equal("reasoning_effort" in body, false);
+});
